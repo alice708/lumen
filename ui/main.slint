@@ -1,0 +1,46 @@
+import { Switch, Slider, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Bulb";
+    preferred-width: 360px;
+    preferred-height: 380px;
+
+    in-out property <bool> power;
+    in-out property <float> brightness: 50;
+    in-out property <float> color-temp: 2700;
+    in property <string> status;
+
+    callback power-toggled(bool);
+    callback brightness-committed(int);
+    callback temp-committed(int);
+
+    VerticalBox {
+        Text { text: "Light"; font-size: 24px; }
+
+        HorizontalBox {
+            Text { text: "Power"; vertical-alignment: center; }
+            Switch {
+                checked <=> root.power;
+                toggled => { root.power-toggled(self.checked); }
+            }
+        }
+
+        Text { text: "Brightness: \{round(root.brightness)}%"; }
+        Slider {
+            minimum: 1;
+            maximum: 100;
+            value <=> root.brightness;
+            released(v) => { root.brightness-committed(round(v)); }
+        }
+
+        Text { text: "Colour temperature: \{round(root.color-temp)}K"; }
+        Slider {
+            minimum: 2500;
+            maximum: 6500;
+            value <=> root.color-temp;
+            released(v) => { root.temp-committed(round(v)); }
+        }
+
+        Text { text: root.status; }
+    }
+}

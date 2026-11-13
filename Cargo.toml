@@ -1,0 +1,19 @@
+[package]
+name = "lumen"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+slint = { version = "1.15", features = ["backend-android-activity-06"] }
+dotenvy = "0.15.7"
+tapo = "0.13.0"
+tokio = { version = "1.54.1", features = ["full"] }
+
+
+[build-dependencies]
+slint-build = "1.15"
