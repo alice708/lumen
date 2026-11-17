@@ -1,8 +1,9 @@
-use std::env;
+use std::{env, net::IpAddr};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 slint::include_modules!();
 
+#[derive(Debug, Clone, Copy)]
 enum Command {
     Power(bool),
 }
@@ -13,40 +14,62 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let ui = MainWindow::new()?;
-    let (tx, rx) = mpsc::unbounded_channel::<Command>();
 
-    ui.on_power_toggled({
-        let tx = tx.clone();
-        move |on| {
-            let _ = tx.send(Command::Power(on));
-        }
-    });
+    let ips = env::var("BULB_IPS")?
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.parse::<IpAddr>()
+                .map_err(|e| format!("Bad IP {s:?}: {e}"))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let user = env::var("TAPO_USERNAME")?;
+    let pass = env::var("TAPO_PASSWORD")?;
 
-    rt.spawn(worker(rx, ui.as_weak()));
+    let mut senders = Vec::with_capacity(ips.len());
+    for (idx, ip) in ips.iter().enumerate() {
+        let (tx, rx) = mpsc::unbounded_channel::<Command>();
+        senders.push(tx);
+        rt.spawn(worker(
+            idx,
+            user.clone(),
+            pass.clone(),
+            ip.to_string(),
+            rx,
+            ui.as_weak(),
+        ));
+    }
+    let senders = std::sync::Arc::new(senders);
+
+    ui.on_power_toggled( move |on| broadcast(&senders, Command::Power(on)) );
 
     ui.run()?;
     Ok(())
+}
+
+fn broadcast(senders: &[mpsc::UnboundedSender<Command>], cmd: Command) {
+    for tx in senders {
+        let _ = tx.send(cmd.clone());
+    }
 }
 
 fn set_status(weak: &slint::Weak<MainWindow>, msg: String) {
     let _ = weak.upgrade_in_event_loop(move |ui| ui.set_status(msg.into()));
 }
 
-async fn connect() -> Result<tapo::ColorLightHandler, Box<dyn std::error::Error>> {
-    let user = std::env::var("TAPO_USERNAME")?;
-    let pass = std::env::var("TAPO_PASSWORD")?;
-    let ip = std::env::var("IP_ADDRESS")?;
-    Ok(tapo::ApiClient::new(user, pass).l630(ip).await?)
-}
-
-async fn worker(mut rx: UnboundedReceiver<Command>, weak: slint::Weak<MainWindow>) {
-    let device = match connect().await {
-        Ok(d) => {
-            set_status(&weak, "Connected".into());
-            d
-        }
+async fn worker(
+    idx: usize,
+    user: String,
+    pass: String,
+    ip: String,
+    mut rx: UnboundedReceiver<Command>,
+    ui: slint::Weak<MainWindow>,
+) {
+    let device = match tapo::ApiClient::new(user, pass).l630(ip).await {
+        Ok(d) => d,
         Err(e) => {
-            set_status(&weak, format!("Connect failed: {e}"));
+            set_status(&ui, format!("Bulb {}: connect failed: {e}", idx + 1));
             return;
         }
     };
@@ -58,8 +81,8 @@ async fn worker(mut rx: UnboundedReceiver<Command>, weak: slint::Weak<MainWindow
             Command::Power(false) => device.off().await,
         };
         match result {
-            Ok(()) => set_status(&weak, "OK".into()),
-            Err(e) => set_status(&weak, format!("Error: {e}")),
+            Ok(()) => set_status(&ui, "OK".into()),
+            Err(e) => set_status(&ui, format!("Error: {e}")),
         }
     }
 }
