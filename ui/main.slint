@@ -1,0 +1,21 @@
+import { Switch, Slider, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Bulb";
+
+    in-out property <bool> power-on: false;
+    in property <string> status;
+
+    callback power-toggled(bool);
+
+    VerticalBox {
+        HorizontalBox {
+            Text { text: "Power"; vertical-alignment: center; }
+            Switch {
+                checked <=> root.power-on;
+                toggled => { root.power-toggled(self.checked); }
+            }
+        }
+        Text { text: root.status; }
+    }
+}
